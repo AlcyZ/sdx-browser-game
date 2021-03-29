@@ -1,37 +1,6 @@
 import {mat4} from 'gl-matrix';
 import {Glb} from '../../loader/glb';
-import {compileVertexShader, compileFragmentShader, createProgram} from '../../utility/gl';
-import {GlTfAccessor, GlTfBufferView, GlTfMesh, GlTfMeshPrimitive} from '../../types/glTf';
-
-const vShader = `#version 100
-
-attribute vec3 position;
-attribute vec3 normal;
-attribute vec2 textureCoords;
-
-varying vec3 fNormal;
-varying vec2 fTextureCoords;
-
-uniform mat4 modelMatrix;
-uniform mat4 viewMatrix;
-uniform mat4 projectionMatrix;
-
-void main() {
-    vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-    gl_Position = projectionMatrix * viewMatrix * worldPosition;
-    
-    fNormal = normal;
-    fTextureCoords = textureCoords;
-}`;
-
-const fShader = `#version 100
-
-precision mediump float;
-
-void main() {
-
-    gl_FragColor = vec4(0.8, 0.0, 0.0, 1.0);
-}`;
+import {GlTfAccessor, GlTfBufferView, GlTfMesh} from '../../types/glTf';
 
 interface BufferDescriptor {
     buffer: WebGLBuffer;
@@ -48,6 +17,12 @@ interface ProgramDescriptor {
     positionsDescriptor: AttributeBufferDescriptor;
     normalsDescriptor?: AttributeBufferDescriptor;
     textureCoordsDescriptor?: AttributeBufferDescriptor;
+
+    textures: {
+        textureImage: TexImageSource;
+        textureBuffer: WebGLTexture | null;
+        textureLocation: WebGLUniformLocation | null;
+    }[];
 }
 
 const createBufferViews = (accessor: GlTfAccessor, glb: Glb, gl: WebGLRenderingContext): [ArrayBufferView, GlTfBufferView] => {
@@ -96,17 +71,20 @@ const createAttributeBufferDescriptor = (bufferAccessor: GlTfAccessor, glb: Glb,
     }
 }
 
-const sliceArrayBuffer = (arrayBuffer: ArrayBufferLike, byteOffset: number, byteLength: number) => {
-    const subArray = new Uint8Array(arrayBuffer).subarray(byteOffset, byteOffset + byteLength);
-    const arrayCopy = new Uint8Array(subArray);
-    return arrayCopy;
+const loadHtmlImage = async (url: string): Promise<HTMLImageElement> => {
+    return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.addEventListener('load', () => resolve(image));
+        image.addEventListener('error', reject);
+
+        image.src = url;
+    });
 }
 
-const sampleProgramDescriptor = (mesh: GlTfMesh, glb: Glb, gl: WebGLRenderingContext, program: WebGLProgram): ProgramDescriptor[] => {
+const sampleProgramDescriptor = async (mesh: GlTfMesh, glb: Glb, gl: WebGLRenderingContext, program: WebGLProgram): Promise<ProgramDescriptor[]> => {
     const descriptors: ProgramDescriptor[] = [];
 
-    mesh.primitives.forEach((primitive: GlTfMeshPrimitive): void => {
-        // INDEX BUFFER
+    for (const primitive of mesh.primitives) {
         const indexDescriptor = createBufferDescriptor(glb.json.glTf.accessors[primitive.indices], glb, gl);
         const positionsDescriptor = createAttributeBufferDescriptor(glb.json.glTf.accessors[primitive.attributes.POSITION], glb, gl, program, 'position');
 
@@ -117,6 +95,8 @@ const sampleProgramDescriptor = (mesh: GlTfMesh, glb: Glb, gl: WebGLRenderingCon
         const textureCoordsDescriptor = primitive.attributes.TEXCOORD_0
             ? createAttributeBufferDescriptor(glb.json.glTf.accessors[primitive.attributes.TEXCOORD_0], glb, gl, program, 'textureCoords')
             : undefined;
+
+        const textures = [];
 
         if (primitive.material !== undefined) {
             const material = glb.json.glTf.materials[primitive.material];
@@ -130,40 +110,36 @@ const sampleProgramDescriptor = (mesh: GlTfMesh, glb: Glb, gl: WebGLRenderingCon
                     const byteOffset = glb.buffer.binStart + bufferView.byteOffset;
                     const length = bufferView.byteLength;
 
-                    // const textureData = new Uint8ClampedArray(40000);
-                    // // Iterate through every pixel
-                    // for (let i = 0; i < textureData.length; i += 4) {
-                    //     textureData[i + 0] = 0;    // R value
-                    //     textureData[i + 1] = 190;  // G value
-                    //     textureData[i + 2] = 0;    // B value
-                    //     textureData[i + 3] = 255;  // A value
-                    // }
-                    // const imageData = new ImageData(textureData, 200); // Todo: Fix hardcoded res
+                    const array = new Uint8Array(glb.buffer.glb, byteOffset, length);
 
-                    // const textureData = new Uint8Array(glb.buffer.glb, byteOffset, length);
-                    // const asd = sliceArrayBuffer(textureData.buffer, textureData.byteOffset, textureData.byteLength);
-                    //
-                    // console.log(asd, textureData.byteOffset, asd.byteOffset);
-                    //
-                    //
-                    // const glTexture = gl.createTexture();
-                    // gl.bindTexture(gl.TEXTURE_2D, glTexture);
-                    // gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1024, 886, 0, gl.RGBA, gl.UNSIGNED_BYTE, asd);
-                    // gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA,gl.UNSIGNED_BYTE, imageData);
+                    const blob = new Blob([array], {"type": "image/jpeg"});
+                    const objectURL = URL.createObjectURL(blob);
+                    const textureImage = await loadHtmlImage(objectURL).catch(() => {
+                        throw new Error('Could not load image from buffer view');
+                    });
 
-                    // alert('image data loaded');
+                    const textureBuffer = gl.createTexture();
+                    gl.bindTexture(gl.TEXTURE_2D, textureBuffer);
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, textureImage);
+                    gl.generateMipmap(gl.TEXTURE_2D);
+
+                    textures.push({
+                        textureImage,
+                        textureBuffer,
+                        textureLocation: gl.getUniformLocation(program, "uTexture"),
+                    });
                 }
             }
         }
-
 
         descriptors.push({
             indexDescriptor,
             positionsDescriptor,
             normalsDescriptor,
             textureCoordsDescriptor,
+            textures,
         });
-    });
+    }
 
     return descriptors;
 }
@@ -194,34 +170,37 @@ const enableAttribute = (gl: WebGLRenderingContext, descriptor: AttributeBufferD
     );
 }
 
-export interface RenderMeshDescriptor {
+export interface SetupRenderDescriptor {
     mesh: GlTfMesh;
     glb: Glb;
     gl: WebGLRenderingContext;
+    program: WebGLProgram;
+}
+
+const setupProgramDescriptor = async (descriptor: SetupRenderDescriptor): Promise<ProgramDescriptor[]> => {
+    return await sampleProgramDescriptor(descriptor.mesh, descriptor.glb, descriptor.gl, descriptor.program);
+}
+
+export interface RenderDescriptor {
+    gl: WebGLRenderingContext;
+    program: WebGLProgram,
+    programDescriptors: ProgramDescriptor[];
+
+    modelMatrixLocation: WebGLUniformLocation | null;
+    viewMatrixLocation: WebGLUniformLocation | null;
+    projectionMatrixLocation: WebGLUniformLocation | null;
+
+
+    modelMatrix: mat4;
     viewMatrix: mat4;
     projectionMatrix: mat4;
 }
 
-const renderMesh = (descriptor: RenderMeshDescriptor, translationMatrix?: mat4) => {
+const render = (descriptor: RenderDescriptor) => {
     const gl = descriptor.gl;
-    const modelMatrix = translationMatrix ? translationMatrix : mat4.create();
 
-    // Todo: Shader compiling should be done once
-    const vertexShader = compileVertexShader(gl, vShader);
-    const fragmentShader = compileFragmentShader(gl, fShader);
-    const program = createProgram(gl, vertexShader, fragmentShader);
-
-    const modelMatrixLocation = gl.getUniformLocation(program, 'modelMatrix');
-    const viewMatrixLocation = gl.getUniformLocation(program, 'viewMatrix');
-    const projectionMatrixLocation = gl.getUniformLocation(program, 'projectionMatrix');
-
-    const descriptors = sampleProgramDescriptor(descriptor.mesh, descriptor.glb, gl, program);
-
-    const texture = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-
-    descriptors.forEach((programDescriptor: ProgramDescriptor): void => {
-        gl.useProgram(program);
+    descriptor.programDescriptors.forEach((programDescriptor: ProgramDescriptor): void => {
+        gl.useProgram(descriptor.program);
 
         enableAttribute(gl, programDescriptor.positionsDescriptor);
         if (programDescriptor.normalsDescriptor) {
@@ -231,9 +210,12 @@ const renderMesh = (descriptor: RenderMeshDescriptor, translationMatrix?: mat4) 
             enableAttribute(gl, programDescriptor.textureCoordsDescriptor);
         }
 
-        gl.uniformMatrix4fv(modelMatrixLocation, false, modelMatrix);
-        gl.uniformMatrix4fv(viewMatrixLocation, false, descriptor.viewMatrix);
-        gl.uniformMatrix4fv(projectionMatrixLocation, false, descriptor.projectionMatrix);
+        gl.uniformMatrix4fv(descriptor.modelMatrixLocation, false, descriptor.modelMatrix);
+        gl.uniformMatrix4fv(descriptor.viewMatrixLocation, false, descriptor.viewMatrix);
+        gl.uniformMatrix4fv(descriptor.projectionMatrixLocation, false, descriptor.projectionMatrix);
+
+        gl.clearColor(0.1, 0.1, 0.1, 1.0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
 
         gl.drawElements(
             gl.TRIANGLES,
@@ -244,4 +226,4 @@ const renderMesh = (descriptor: RenderMeshDescriptor, translationMatrix?: mat4) 
     });
 }
 
-export {renderMesh};
+export {setupProgramDescriptor, render};

@@ -13,7 +13,6 @@ export interface GlTfNode {
 }
 
 
-
 export interface GlTfMaterials {
     pbrMetallicRoughness: {
         baseColorFactor?: vec4;
