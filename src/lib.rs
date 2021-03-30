@@ -1,5 +1,5 @@
 use crate::renderer::mesh::shader::MeshRenderDescriptor;
-use gl_matrix::common::{to_radian, Mat4};
+use gl_matrix::common::{Mat4};
 use gl_matrix::{mat4, vec3};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -87,7 +87,7 @@ async fn run() -> Result<(), JsValue> {
         &primitive,
         &glb.json.gltf,
         &glb.buffer,
-    )?;
+    ).await?;
 
     // let mut model_matrix: Mat4 = [0.; 16];
     // let mut view_matrix: Mat4 = [0.; 16];
@@ -135,8 +135,14 @@ async fn run() -> Result<(), JsValue> {
         Some(100.0),
     );
 
-    gl.clear_color(0.1, 0.1, 0.1, 1.0);
+    resize_canvas(&canvas);
+    gl.viewport(0, 0, canvas.width() as i32, canvas.height() as i32);
+
+    gl.clear_color(0.2, 0.2, 0.2, 1.0);
     gl.clear(WebGlRenderingContext::COLOR_BUFFER_BIT);
+
+    gl.enable(WebGlRenderingContext::CULL_FACE);
+    gl.enable(WebGlRenderingContext::DEPTH_TEST);
 
     let descriptor = MeshRenderDescriptor {
         gl: &gl,
@@ -146,15 +152,15 @@ async fn run() -> Result<(), JsValue> {
     };
     mesh_shader.render(descriptor)?;
 
-    web_sys::console::log_1(&format!("rs-model: {:#?}", model_matrix).into());
-    web_sys::console::log_1(&format!("rs-view: {:#?}", view_matrix).into());
-    web_sys::console::log_1(&format!("rs-projection: {:#?}", projection_matrix).into());
+    // web_sys::console::log_1(&format!("rs-model: {:#?}", model_matrix).into());
+    // web_sys::console::log_1(&format!("rs-view: {:#?}", view_matrix).into());
+    // web_sys::console::log_1(&format!("rs-projection: {:#?}", projection_matrix).into());
     // web_sys::console::log_1(&format!("{:#?}", glb).into());
 
     Ok(())
 }
 
-pub fn resize_canvas(canvas: &HtmlCanvasElement) {
+fn resize_canvas(canvas: &HtmlCanvasElement) {
     let display_width = canvas.client_width() as u32;
     let display_height = canvas.client_height() as u32;
 

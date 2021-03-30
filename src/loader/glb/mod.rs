@@ -1,4 +1,3 @@
-use crate::definitions::gltf;
 use crate::definitions::gltf::GlTf;
 use js_sys::ArrayBuffer;
 use wasm_bindgen::prelude::*;

@@ -2,7 +2,9 @@ use crate::definitions::gltf::{GlTf, GlTfAccessor, GlTfBufferView, GlTfMeshPrimi
 use crate::loader::glb::GlbBuffer;
 use gl_matrix::common::Mat4;
 use js_sys::Promise;
-use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::*;
+use wasm_bindgen::{JsCast, JsValue};
+use wasm_bindgen_futures::JsFuture;
 use web_sys::{
     HtmlImageElement, WebGlBuffer, WebGlProgram, WebGlRenderingContext, WebGlTexture,
     WebGlUniformLocation,
@@ -241,9 +243,9 @@ impl<'a> MeshShaderFrameBuffers<'a> {
 
 #[derive(Debug)]
 struct MeshShaderTexture {
-    // image: HtmlImageElement,
-// buffer: WebGlTexture,
-// location: Option<WebGlUniformLocation>,
+    image: HtmlImageElement,
+    buffer: WebGlTexture,
+    location: Option<WebGlUniformLocation>,
 }
 
 #[derive(Debug)]
@@ -251,13 +253,18 @@ struct MeshShaderTextures {
     base_color: Option<MeshShaderTexture>,
 }
 
+#[wasm_bindgen(module = "/assets/ffi/utility.js")]
+extern "C" {
+    fn load_image(data: js_sys::Uint8Array) -> Promise;
+}
+
 impl MeshShaderTextures {
-    fn _new(
-        _gl: &WebGlRenderingContext,
-        _program: &WebGlProgram,
-        primitive: GlTfMeshPrimitive,
+    async fn new(
+        gl: &WebGlRenderingContext,
+        program: &WebGlProgram,
+        primitive: &GlTfMeshPrimitive,
         gltf: &GlTf,
-        _glb_buffer: &GlbBuffer,
+        glb_buffer: &GlbBuffer,
     ) -> Result<MeshShaderTextures, JsValue> {
         let base_color = match primitive.material {
             Some(index) => {
@@ -284,7 +291,44 @@ impl MeshShaderTextures {
                                     .get(index)
                                     .ok_or("could not find texture image buffer view")?;
 
-                                Some(MeshShaderTexture {})
+                                let byte_offset = glb_buffer.byte_offset + buffer_view.byte_offset;
+                                let length = buffer_view.byte_length;
+
+                                let data_array =
+                                    js_sys::Uint8Array::new_with_byte_offset_and_length(
+                                        &glb_buffer.bin,
+                                        byte_offset,
+                                        length,
+                                    );
+                                let mut options = web_sys::BlobPropertyBag::new();
+                                options.type_("image/png");
+
+                                web_sys::console::log_2(
+                                    &byte_offset.into(),
+                                    &length.into(),
+                                );
+
+                                let texture_image =
+                                    JsFuture::from(load_image(data_array)).await?
+                                        .dyn_into::<HtmlImageElement>()?;
+
+                                let texture_buffer = gl.create_texture().unwrap();
+                                gl.bind_texture(WebGlRenderingContext::TEXTURE_2D, Some(&texture_buffer));
+                                gl.tex_image_2d_with_u32_and_u32_and_image(
+                                    WebGlRenderingContext::TEXTURE_2D,
+                                    0,
+                                    WebGlRenderingContext::RGBA as i32,
+                                    WebGlRenderingContext::RGBA,
+                                    WebGlRenderingContext::UNSIGNED_BYTE,
+                                    &texture_image,
+                                )?;
+                                gl.generate_mipmap(WebGlRenderingContext::TEXTURE_2D);
+
+                                Some(MeshShaderTexture {
+                                    buffer: texture_buffer,
+                                    image: texture_image,
+                                    location: gl.get_uniform_location(&program, "uTexture"),
+                                })
                             }
                             None => None,
                         }
@@ -311,12 +355,12 @@ pub(crate) struct MeshRenderDescriptor<'a> {
 pub(crate) struct MeshShader<'a> {
     locations: MeshShaderLocations,
     frame_buffers: MeshShaderFrameBuffers<'a>,
-    // textures: MeshShaderTextures,
+    textures: MeshShaderTextures,
     program: &'a WebGlProgram,
 }
 
 impl<'a> MeshShader<'a> {
-    pub(crate) fn new(
+    pub(crate) async fn new(
         gl: &WebGlRenderingContext,
         program: &'a WebGlProgram,
         primitive: &GlTfMeshPrimitive,
@@ -325,10 +369,12 @@ impl<'a> MeshShader<'a> {
     ) -> Result<MeshShader<'a>, JsValue> {
         let locations = MeshShaderLocations::new(&gl, &program);
         let frame_buffers = MeshShaderFrameBuffers::new(&gl, &primitive, &gltf, &glb_buffer)?;
+        let textures = MeshShaderTextures::new(&gl, &program, &primitive, &gltf, &glb_buffer).await?;
 
         Ok(MeshShader {
             locations,
             frame_buffers,
+            textures,
             program,
         })
     }
