@@ -8,18 +8,18 @@ const CHUNK_TYPE_BIN = 0x004E4942;
 
 const decoder = new TextDecoder();
 
-interface GlbHeader {
+export interface GlbHeader {
     magic: string;
     version: number;
     byteLength: number;
 }
 
-interface GlbJsonChunk {
+export interface GlbJsonChunk {
     byteLength: number;
     glTf: GlTf;
 }
 
-interface GlbBuffer {
+export interface GlbBuffer {
     byteLength: number;
     glb: ArrayBuffer;
     binStart: number;

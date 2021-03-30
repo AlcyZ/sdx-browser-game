@@ -112,7 +112,7 @@ const sampleProgramDescriptor = async (mesh: GlTfMesh, glb: Glb, gl: WebGLRender
 
                     const array = new Uint8Array(glb.buffer.glb, byteOffset, length);
 
-                    const blob = new Blob([array], {"type": "image/jpeg"});
+                    const blob = new Blob([array], {"type": "image/png"});
                     const objectURL = URL.createObjectURL(blob);
                     const textureImage = await loadHtmlImage(objectURL).catch(() => {
                         throw new Error('Could not load image from buffer view');

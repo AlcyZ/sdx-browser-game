@@ -3,9 +3,9 @@ import {mat4} from 'gl-matrix';
 import {compileFragmentShader, compileVertexShader, createProgram, resizeCanvas} from './utility/gl';
 import {GlTfMesh} from './types/glTf';
 import Camera from './Camera';
-import {render, RenderDescriptor, setupProgramDescriptor} from './core/renderer/meshSample';
 import vShader from './core/renderer/shaders/simple_v';
 import fShader from './core/renderer/shaders/simple_f';
+import MeshShader from "./core/renderer/MeshShader";
 
 const sampleRender = async (mesh: GlTfMesh, glb: Glb, canvas: HTMLCanvasElement, gl: WebGLRenderingContext) => {
     const camera = Camera.new();
@@ -15,55 +15,29 @@ const sampleRender = async (mesh: GlTfMesh, glb: Glb, canvas: HTMLCanvasElement,
     const fragmentShader = compileFragmentShader(gl, fShader);
     const program = createProgram(gl, vertexShader, fragmentShader);
 
+    const modelMatrix = mat4.create();
     const viewMatrix = camera.position();
     const projectionMatrix = createProjectionMatrix(canvas);
 
-    const setupRenderDescriptor = {
-        mesh,
-        glb,
-        gl,
-        program
-    };
-    const programDescriptors = await setupProgramDescriptor(setupRenderDescriptor);
-    const modelMatrixLocation = gl.getUniformLocation(program, 'modelMatrix');
-    const viewMatrixLocation = gl.getUniformLocation(program, 'viewMatrix');
-    const projectionMatrixLocation = gl.getUniformLocation(program, 'projectionMatrix');
+    const meshShader = await MeshShader.new(mesh.primitives[0], glb.buffer, glb.json.glTf, gl, program);
 
-    let time = 0;
-
-    const modelMatrix = mat4.create();
-
-    const renderDescriptors: RenderDescriptor = {
-        gl,
-        modelMatrix,
-        modelMatrixLocation,
-        program,
-        programDescriptors,
-        projectionMatrix,
-        projectionMatrixLocation,
-        viewMatrix,
-        viewMatrixLocation
-
-    };
-
-    const draw = (): void => {
+    const draw = () => {
         resizeCanvas(canvas);
         gl.viewport(0, 0, canvas.width, canvas.height);
+
+        gl.clearColor(0.2, 0.2, 0.2, 1.0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
 
         gl.enable(gl.CULL_FACE);
         gl.enable(gl.DEPTH_TEST);
 
         mat4.rotateY(modelMatrix, modelMatrix, 0.03);
 
-        const renderDescriptor: RenderDescriptor = {
-            ...renderDescriptors,
-            modelMatrix,
-        };
-        render(renderDescriptor);
+        meshShader.render(gl, modelMatrix,
+            viewMatrix,
+            projectionMatrix)
 
         window.requestAnimationFrame(draw);
-
-        time += 1 / 60;
     }
 
     draw();
@@ -94,5 +68,5 @@ export default async function (): Promise<void> {
     }
 
     const mesh = glb.json.glTf.meshes[0];
-    sampleRender(mesh, glb, canvas, gl);
+    await sampleRender(mesh, glb, canvas, gl);
 }
