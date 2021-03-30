@@ -1,8 +1,9 @@
-// import init, {test} from './wasm/sdx_browser_game';
+import init, {example} from './wasm/sdx_browser_game';
 import glbSample from './glbSample';
 
 export default async function (): Promise<void> {
-    // await init();
+    await init();
+    // await glbSample();
 
-    await glbSample();
+    example();
 }
