@@ -5,21 +5,101 @@ import {GlTfMesh} from './types/glTf';
 import Camera from './Camera';
 import vShader from './core/renderer/shaders/simple_v';
 import fShader from './core/renderer/shaders/simple_f';
-import MeshShader from "./core/renderer/MeshShader";
+// import MeshShader from "./core/renderer/MeshShader";
+import init, {MeshRenderDescriptor, MeshShader} from './wasm/sdx_browser_game';
 
-const sampleRender = async (mesh: GlTfMesh, glb: Glb, canvas: HTMLCanvasElement, gl: WebGLRenderingContext) => {
-    const camera = Camera.new();
-    camera.translate(0, 0, -7);
+const foo = {
+    keyPress: {
+        w: false,
+        a: false,
+        s: false,
+        d: false,
+        mouse: false
+    },
+    mousePos: {
+        x: 0,
+        y: 0,
+    },
+    mouseMove: {
+        left: false,
+        right: false,
+        up: false,
+        down: false
+    },
+}
 
-    const vertexShader = compileVertexShader(gl, vShader);
-    const fragmentShader = compileFragmentShader(gl, fShader);
-    const program = createProgram(gl, vertexShader, fragmentShader);
+const mouseDown = (event: MouseEvent) => {
+    foo.keyPress.mouse = true;
+}
 
-    const modelMatrix = mat4.create();
-    const viewMatrix = camera.position();
-    const projectionMatrix = createProjectionMatrix(canvas);
+const mouseUp = (event: MouseEvent) => {
+    foo.keyPress.mouse = false;
+}
 
-    const meshShader = await MeshShader.new(mesh.primitives[0], glb.buffer, glb.json.glTf, gl, program);
+const mouseMove = (event: MouseEvent, descriptor: MeshRenderDescriptor) => {
+    if (!foo.keyPress.mouse) {
+        return;
+    }
+
+    const moveLeft = foo.mousePos.x - event.clientX > 0;
+    const moveRight = foo.mousePos.x - event.clientX < 0;
+    const moveUp = foo.mousePos.y - event.clientY >= 0;
+    const moveDown = foo.mousePos.y - event.clientY >= 0;
+
+    foo.mouseMove.left = moveLeft;
+    foo.mouseMove.right = moveRight;
+    foo.mouseMove.up = moveUp;
+    foo.mouseMove.down = moveDown;
+
+    foo.mousePos.x = event.clientX;
+    foo.mousePos.y = event.clientY;
+}
+
+const keyDown = (event: KeyboardEvent, descriptor: MeshRenderDescriptor) => {
+    switch (event.key) {
+        case 'w':
+            foo.keyPress.w = true;
+            break;
+        case 'a':
+            foo.keyPress.a = true;
+            break;
+        case 's':
+            foo.keyPress.s = true;
+            break;
+        case 'd':
+            foo.keyPress.d = true;
+            break;
+    }
+}
+
+const keyUp = (event: KeyboardEvent, descriptor: MeshRenderDescriptor) => {
+    switch (event.key) {
+        case 'w':
+            foo.keyPress.w = false;
+            break;
+        case 'a':
+            foo.keyPress.a = false;
+            break;
+        case 's':
+            foo.keyPress.s = false;
+            break;
+        case 'd':
+            foo.keyPress.d = false;
+            break;
+    }
+}
+
+const sampleRender = async (gl: WebGLRenderingContext, canvas: HTMLCanvasElement) => {
+    await init();
+
+    const meshShader = await MeshShader.from_url(gl, '/models/test/suzanne1.glb');
+    const descriptor = MeshRenderDescriptor.sample(canvas);
+
+    window.addEventListener('mousedown', (event: MouseEvent) => mouseDown(event));
+    window.addEventListener('mouseup', (event: MouseEvent) => mouseUp(event));
+    window.addEventListener('mousemove', (event: MouseEvent) => mouseMove(event, descriptor));
+    window.addEventListener('keydown', (event: KeyboardEvent) => keyDown(event, descriptor));
+    window.addEventListener('keyup', (event: KeyboardEvent) => keyUp(event, descriptor));
 
     const draw = () => {
         resizeCanvas(canvas);
@@ -31,28 +111,50 @@ const sampleRender = async (mesh: GlTfMesh, glb: Glb, canvas: HTMLCanvasElement,
         gl.enable(gl.CULL_FACE);
         gl.enable(gl.DEPTH_TEST);
 
-        mat4.rotateY(modelMatrix, modelMatrix, 0.03);
+        if (foo.keyPress.w) {
+            descriptor.move_camera(0.0, 0.0, 0.1);
+        }
+        if (foo.keyPress.a) {
+            descriptor.move_camera(0.1, 0.0, 0.0);
+        }
+        if (foo.keyPress.s) {
+            descriptor.move_camera(0.0, 0.0, -0.1);
+        }
+        if (foo.keyPress.d) {
+            descriptor.move_camera(-0.1, 0.0, 0.0);
+        }
+        if (foo.mouseMove.left) {
+            descriptor.turn_x(-0.2);
+        }
+        if (foo.mouseMove.right) {
+            descriptor.turn_x(0.2);
+        }
+        // if (foo.mouseMove.up) {
+        //     descriptor.turn_x(0.1);
+        // }
+        // if (foo.mouseMove.down) {
+        //     descriptor.turn_x(0.1);
+        // }
 
-        meshShader.render(gl, modelMatrix,
-            viewMatrix,
-            projectionMatrix)
+        // console.log('left', foo.mouseMove.left);
+        // console.log('right', foo.mouseMove.right);
+        // console.log('up', foo.mouseMove.up);
+        // console.log('down', foo.mouseMove.down);
+
+        // console.log(gl, descriptor);
+        meshShader.render(gl, descriptor);
+        // descriptor.rotate_sample();
+
+        foo.mouseMove.left = false;
+        foo.mouseMove.right = false;
+        foo.mouseMove.up = false;
+        foo.mouseMove.down = false;
 
         window.requestAnimationFrame(draw);
     }
 
     draw();
 }
-
-const createProjectionMatrix = (canvas: HTMLCanvasElement): mat4 => {
-    const projectionMatrix = mat4.create();
-    const aspect = Math.abs(canvas.width / canvas.height);
-    const degree = 60;
-    const fov = (degree * Math.PI) / 180;
-
-    mat4.perspective(projectionMatrix, fov, aspect, 1, 100.0);
-
-    return projectionMatrix;
-};
 
 export default async function (): Promise<void> {
     const url = '/models/test/suzanne1.glb'
@@ -68,5 +170,6 @@ export default async function (): Promise<void> {
     }
 
     const mesh = glb.json.glTf.meshes[0];
-    await sampleRender(mesh, glb, canvas, gl);
+    await sampleRender(gl, canvas);
+    // await sampleRender2(mesh, glb, canvas, gl);
 }

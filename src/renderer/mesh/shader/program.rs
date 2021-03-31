@@ -1,21 +1,32 @@
 use wasm_bindgen::prelude::*;
 use web_sys::{WebGlProgram, WebGlRenderingContext, WebGlShader};
 
-pub fn compile_vertex_shader(
+pub(super) fn compile_to_program(
+    gl: &web_sys::WebGlRenderingContext,
+    vertex_shader: &str,
+    fragment_shader: &str,
+) -> Result<WebGlProgram, JsValue> {
+    let v_shader = compile_vertex_shader(&gl, vertex_shader)?;
+    let f_shader = compile_fragment_shader(&gl, fragment_shader)?;
+
+    link_program(&gl, &v_shader, &f_shader)
+}
+
+fn compile_vertex_shader(
     gl: &web_sys::WebGlRenderingContext,
     source: &str,
 ) -> Result<WebGlShader, JsValue> {
     compile_shader(&gl, WebGlRenderingContext::VERTEX_SHADER, source)
 }
 
-pub fn compile_fragment_shader(
+fn compile_fragment_shader(
     gl: &web_sys::WebGlRenderingContext,
     source: &str,
 ) -> Result<WebGlShader, JsValue> {
     compile_shader(&gl, WebGlRenderingContext::FRAGMENT_SHADER, source)
 }
 
-pub fn link_program(
+fn link_program(
     gl: &WebGlRenderingContext,
     vert_shader: &WebGlShader,
     frag_shader: &WebGlShader,
