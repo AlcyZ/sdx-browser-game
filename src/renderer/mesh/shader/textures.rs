@@ -26,7 +26,7 @@ pub(super) struct MeshShaderTextures {
 }
 
 impl MeshShaderTextures {
-    pub(super) async fn new(
+    pub(super) async fn from_gltf(
         gl: &WebGlRenderingContext,
         program: &WebGlProgram,
         primitive: &GlTfMeshPrimitive,
@@ -69,8 +69,6 @@ impl MeshShaderTextures {
                                     );
                                 let mut options = web_sys::BlobPropertyBag::new();
                                 options.type_("image/png");
-
-                                web_sys::console::log_2(&byte_offset.into(), &length.into());
 
                                 let texture_image = JsFuture::from(load_image(data_array))
                                     .await?

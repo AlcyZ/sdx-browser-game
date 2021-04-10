@@ -10,11 +10,6 @@ const HEADER_VERSION_SUPPORT: u32 = 2;
 const CHUNK_TYPE_JSON: u32 = 0x4E4F534A;
 const CHUNK_TYPE_BIN: u32 = 0x004E4942;
 
-#[wasm_bindgen]
-extern "C" {
-    pub fn alert(msg: &str);
-}
-
 #[derive(Debug)]
 struct GlbHeader {
     magic: u32,
@@ -66,14 +61,19 @@ impl GlbJson {
         let decoder = web_sys::TextDecoder::new()?;
         let json = decoder.decode_with_buffer_source(&content_chunk)?;
 
+        web_sys::console::log_1(
+            &format!("{}", json).into(),
+        );
+
         let gltf: GlTf = serde_json::from_str(&json).or_else(|e| {
-            return Err(JsValue::from_str(&e.to_string()));
+            return Err(JsValue::from_str(&format!(
+                "{}\nJson: {}",
+                &e.to_string(),
+                &json
+            )));
         })?;
 
-        Ok(GlbJson {
-            byte_length,
-            gltf: gltf,
-        })
+        Ok(GlbJson { byte_length, gltf })
     }
 }
 

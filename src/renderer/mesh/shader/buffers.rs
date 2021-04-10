@@ -100,11 +100,8 @@ impl MeshShaderFrameBuffer {
         let byte_offset = glb_buffer.byte_offset + buffer_view.byte_offset;
         let length = buffer_view.byte_length;
 
-        let buffer_data = js_sys::Float32Array::new_with_byte_offset_and_length(
-            &glb_buffer.bin,
-            byte_offset,
-            length,
-        );
+        let buffer_data =
+            js_sys::DataView::new(&glb_buffer.bin, byte_offset as usize, length as usize);
 
         let buffer = MeshShaderFrameBuffer::new_buffer(&gl)?;
         gl.bind_buffer(target, Some(&buffer));
@@ -169,7 +166,7 @@ pub(super) struct MeshShaderFrameBuffers {
 }
 
 impl MeshShaderFrameBuffers {
-    pub(super) fn new(
+    pub(super) fn from_gltf(
         gl: &WebGlRenderingContext,
         primitive: &GlTfMeshPrimitive,
         gltf: &GlTf,

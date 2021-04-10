@@ -12,7 +12,10 @@ pub(crate) struct GlTfScene {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct GlTfNode {
-    pub(crate) mesh: Vec<usize>,
+    pub(crate) name: String,
+    pub(crate) mesh: Option<usize>,
+    pub(crate) translation: Option<[f32; 3]>,
+    pub(crate) rotation: Option<[f32; 4]>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -59,6 +62,7 @@ pub(crate) struct GlTfMeshPrimitive {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct GlTfMesh {
+    pub(crate) name: String,
     pub(crate) primitives: Vec<GlTfMeshPrimitive>,
 }
 
@@ -127,8 +131,9 @@ pub(crate) struct GlTfAsset {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct GlTf {
-    // scenes: Vec<GlTfScene>,
-    // nodes: Vec<GlTfNode>,
+    pub(crate) scene: usize,
+    pub(crate) scenes: Vec<GlTfScene>,
+    pub(crate) nodes: Vec<GlTfNode>,
     pub(crate) materials: Vec<GlTfMaterial>,
     pub(crate) meshes: Vec<GlTfMesh>,
     pub(crate) textures: Vec<GlTfTexture>,

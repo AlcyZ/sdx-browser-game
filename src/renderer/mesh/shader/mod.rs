@@ -1,16 +1,14 @@
-use gl_matrix::common::{to_radian, Mat4};
 use wasm_bindgen::prelude::*;
-use web_sys::{HtmlCanvasElement, WebGlProgram, WebGlRenderingContext};
+use web_sys::{WebGlProgram, WebGlRenderingContext};
 
-use crate::definitions::gltf::{GlTf, GlTfAccessor, GlTfMeshPrimitive};
+use crate::definitions::gltf::{GlTf, GlTfMeshPrimitive};
 use crate::loader::glb::GlbBuffer;
-use crate::renderer::camera::simple::SimpleCamera;
 use crate::renderer::mesh::shader::buffers::{
     Accessor, MeshShaderFrameBuffer, MeshShaderFrameBuffers,
 };
 use crate::renderer::mesh::shader::locations::MeshShaderLocations;
 use crate::renderer::mesh::shader::textures::MeshShaderTextures;
-use gl_matrix::{mat4, vec3};
+use crate::renderer::mesh::MeshRenderDescriptor;
 
 mod buffers;
 mod locations;
@@ -51,48 +49,6 @@ void main() {
     gl_FragColor = texture2D(uTexture, fTextureCoords);
 }";
 
-#[wasm_bindgen]
-#[derive(Debug)]
-pub struct MeshRenderDescriptor {
-    pub(crate) model_matrix: Mat4,
-    camera: SimpleCamera,
-}
-
-#[wasm_bindgen]
-impl MeshRenderDescriptor {
-    pub fn rotate_sample(&mut self) {
-        let a = self.model_matrix.clone();
-
-        mat4::rotate_y(&mut self.model_matrix, &a, 0.03);
-    }
-
-    pub fn move_camera(&mut self, x: f32, y: f32, z: f32) {
-        self.camera.translate(x, y, z);
-    }
-
-    pub fn turn_x(&mut self, turn_rate: f32) {
-        self.camera.turn_x(turn_rate);
-    }
-
-    pub fn sample(canvas: HtmlCanvasElement) -> MeshRenderDescriptor {
-        let aspect = canvas.width() / canvas.height();
-
-        let mut model_matrix = mat4::create();
-
-        let eye = vec3::from_values(0., 3., -8.);
-        let center = vec3::from_values(0., 0., 0.);
-        let up = vec3::from_values(0., 1., 0.);
-
-        let camera = SimpleCamera::new(eye, center, up, aspect as f32);
-
-        MeshRenderDescriptor {
-            model_matrix,
-            camera,
-        }
-    }
-}
-
-#[wasm_bindgen]
 #[derive(Debug)]
 pub struct MeshShader {
     locations: MeshShaderLocations,
@@ -101,25 +57,28 @@ pub struct MeshShader {
     program: WebGlProgram,
 }
 
-#[wasm_bindgen]
 impl MeshShader {
-    pub async fn from_url(gl: WebGlRenderingContext, url: String) -> Result<MeshShader, JsValue> {
-        let glb = crate::loader::glb::Glb::from_url(&url).await?;
+    pub(super) async fn from_gltf(
+        gl: &WebGlRenderingContext,
+        primitive: &GlTfMeshPrimitive,
+        gltf: &GlTf,
+        glb_buffer: &GlbBuffer,
+    ) -> Result<MeshShader, JsValue> {
         let program = program::compile_to_program(&gl, V_SHADER, F_SHADER)?;
-        let primitive = glb
-            .json
-            .gltf
-            .meshes
-            .first()
-            .ok_or(JsValue::from_str("could not find mesh"))?
-            .primitives
-            .first()
-            .ok_or(JsValue::from_str("could not find mesh primitive"))?;
+        let locations = MeshShaderLocations::new(&gl, &program);
+        let frame_buffers = MeshShaderFrameBuffers::from_gltf(&gl, &primitive, &gltf, &glb_buffer)?;
+        let textures =
+            MeshShaderTextures::from_gltf(&gl, &program, &primitive, &gltf, &glb_buffer).await?;
 
-        MeshShader::new(&gl, program, primitive, &glb.json.gltf, &glb.buffer).await
+        Ok(MeshShader {
+            locations,
+            frame_buffers,
+            textures,
+            program,
+        })
     }
 
-    pub fn render(
+    pub(super) fn render(
         &self,
         gl: &WebGlRenderingContext,
         descriptor: &MeshRenderDescriptor,
@@ -152,12 +111,12 @@ impl MeshShader {
         gl.uniform_matrix4fv_with_f32_array(
             self.locations.uniform.view_matrix.as_ref(),
             false,
-            &descriptor.camera.view(),
+            &descriptor.view_matrix,
         );
         gl.uniform_matrix4fv_with_f32_array(
             self.locations.uniform.projection_matrix.as_ref(),
             false,
-            &descriptor.camera.projection(),
+            &descriptor.projection_matrix,
         );
 
         let byte_offset = match self.frame_buffers.index.accessor.byte_offset {
@@ -177,26 +136,6 @@ impl MeshShader {
 }
 
 impl MeshShader {
-    async fn new(
-        gl: &WebGlRenderingContext,
-        program: WebGlProgram,
-        primitive: &GlTfMeshPrimitive,
-        gltf: &GlTf,
-        glb_buffer: &GlbBuffer,
-    ) -> Result<MeshShader, JsValue> {
-        let locations = MeshShaderLocations::new(&gl, &program);
-        let frame_buffers = MeshShaderFrameBuffers::new(&gl, &primitive, &gltf, &glb_buffer)?;
-        let textures =
-            MeshShaderTextures::new(&gl, &program, &primitive, &gltf, &glb_buffer).await?;
-
-        Ok(MeshShader {
-            locations,
-            frame_buffers,
-            textures,
-            program,
-        })
-    }
-
     fn enable_attribute(
         gl: &WebGlRenderingContext,
         frame_buffer: &MeshShaderFrameBuffer,
